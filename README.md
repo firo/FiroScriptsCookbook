@@ -26,7 +26,7 @@ FiroScriptsCookbook/
 
 1. **Clone the repository**:
 
-    git clone https://github.com/yourusername/FiroScriptsCookbook.git  
+    git clone https://github.com/firo/FiroScriptsCookbook.git  
     cd FiroScriptsCookbook
 
 2. **List available scripts**:
