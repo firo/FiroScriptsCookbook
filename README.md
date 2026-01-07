@@ -35,11 +35,11 @@ FiroScriptsCookbook/
 
 3. **Run a script**:
 
-    ./firo_create_lxc_docker.sh
+    bash ./firo_create_lxc_docker.sh
 
 Or pass parameters directly:
 
-    ./firo_create_lxc_docker.sh <CTID> <HOSTNAME> <ROOT_PASSWORD>
+    bash ./firo_create_lxc_docker.sh <CTID> <HOSTNAME> <ROOT_PASSWORD>
 
 ---
 
