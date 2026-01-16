@@ -172,4 +172,3 @@ echo -e "${YW}Portainer:${CL} https://${IP}:9443"
 # --- Pulizia ---
 pct exec $CTID -- rm -f /tmp/setup.sh
 pct exec $CTID -- apt-get clean
-root@PX01:~# 
