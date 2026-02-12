@@ -1,6 +1,6 @@
-#!/usr/bin/env bash
+!/usr/bin/env bash
 # =====================================================
-# Firosh LXC Creator - FINAL ULTIMATE FIX + SSH ACCESS
+# Firosh LXC Creator - FINAL ULTIMATE FIX + SSH
 # =====================================================
 
 TEMPLATE="local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst"
@@ -16,15 +16,11 @@ RD=$(echo -e "\033[31m")
 CY=$(echo -e "\033[36m")
 CL=$(echo -e "\033[m")
 
-msg_info() {
-  echo -e "${CY}➡️ $1${CL}"
-}
-msg_ok() {
-  echo -e "${GN}✅ $1${CL}"
-}
+msg_info() { echo -e "${CY}➡️  $1${CL}"; }
+msg_ok()   { echo -e "${GN}✅ $1${CL}"; }
 
 if [ -z "$1" ]; then
-  echo -e "${CY}🧱 Crea container LXC Docker (Fix AppArmor Edition + SSH Access)${CL}\n"
+  echo -e "${CY}🧱 Crea container LXC Docker (Fix AppArmor + SSH)${CL}\n"
   read -rp "Inserisci CTID: " CTID
   read -rp "Inserisci hostname: " HOSTNAME
   read -rp "Inserisci password root: " PASSWORD
@@ -35,7 +31,7 @@ fi
 HOSTNAME="${HOSTNAME//_/-}"
 
 # --- Creazione container ---
-msg_info "Creazione LXC CT${CTID}..."
+msg_info "Creazione LXC CT${CTID} ($HOSTNAME)..."
 pct create $CTID $TEMPLATE \
   --hostname "$HOSTNAME" \
   --storage $STORAGE \
@@ -48,63 +44,72 @@ pct create $CTID $TEMPLATE \
   --unprivileged 0 \
   --onboot 1
 
-# --- FIX APPARMOR & SYSCTL (Il pezzo mancante) ---
-msg_info "Rimozione restrizioni AppArmor..."
-cat <> /etc/pve/lxc/${CTID}.conf <<EOF
+# --- FIX APPARMOR (Essenziale per Docker) ---
+msg_info "Sblocco restrizioni AppArmor..."
+cat <<EOF >> /etc/pve/lxc/${CTID}.conf
 lxc.apparmor.profile: unconfined
 lxc.cgroup.devices.allow: a
 lxc.cap.drop:
 EOF
-msg_ok "Configurazione di sicurezza sbloccata."
 
 # --- Avvio ---
 pct start $CTID
 sleep 8
 
-# --- Script interno ---
-msg_info "Configurazione interna..."
-cat < /tmp/setup.sh <<EOF
+# --- Script interno di installazione ---
+msg_info "Configurazione interna (SSH + Docker + Portainer)..."
+cat <<EOF > /tmp/setup.sh
 #!/bin/bash
 export DEBIAN_FRONTEND=noninteractive
+
+# Update e installazione pacchetti base
 apt-get update -qq
-apt-get install -y curl gnupg ca-certificates lsb-release apt-transport-https openssh-server >/dev/null 2>&1
+apt-get install -y openssh-server curl gnupg ca-certificates lsb-release apt-transport-https >/dev/null 2>&1
 
-# Enable SSH service
-systemctl enable ssh
-systemctl start ssh
+# =====================
+# SSH root login (IL FIX)
+# =====================
+mkdir -p /var/run/sshd
+echo "root:${PASSWORD}" | chpasswd
+sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+systemctl restart ssh >/dev/null 2>&1
 
-# Configure SSH to allow root login with password
-sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
-sed -i 's/PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
-sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
-sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
-
-# Restart SSH service to apply changes
-systemctl restart ssh
-
+# =====================
 # Docker install
+# =====================
 install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-echo "deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \$(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+echo "deb [arch=\$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \$(lsb_relea>
 apt-get update -qq
 apt-get install -y docker-ce docker-ce-cli containerd.io >/dev/null 2>&1
+
 sleep 5
-
-# Add root user to docker group
-usermod -aG docker root
-
+# =====================
 # Portainer install
-docker run -d -p 8000:8000 -p 9443:9443 --name=portainer --restart=always \
+# =====================
+docker volume create portainer_data >/dev/null 2>&1
+docker run -d \
+  -p 8000:8000 \
+  -p 9443:9443 \
+  --name=portainer \
+  --restart=always \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v portainer_data:/data \
   portainer/portainer-ce:latest
 EOF
 
+# --- Push e esecuzione ---
 pct push $CTID /tmp/setup.sh /tmp/setup.sh -perms 755
 pct exec $CTID -- bash /tmp/setup.sh
 
+# --- IP Detection ---
 IP=$(pct exec $CTID -- hostname -I | awk '{print $1}')
+
 msg_ok "Setup completato!"
-echo -e "${GN}Portainer attivo su:${CL} https://${IP}:9443"
-echo -e "${GN}SSH accessibile su:${CL} ssh root@${IP}"
+echo -e "${GN}Container pronto:${CL}"
+echo -e "${YW}SSH:${CL} ssh root@${IP} (Password: ${PASSWORD})"
+echo -e "${YW}Portainer:${CL} https://${IP}:9443"
+
+# Pulizia
 pct exec $CTID -- rm -f /tmp/setup.sh
